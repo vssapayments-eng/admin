@@ -1,119 +1,125 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <base target="_top">
-    <title>RSCO Attendance System</title>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSCO Terminal</title>
+    <meta name="apple-mobile-web-app-title" content="RSCO">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://ui-avatars.com/api/?name=RS&background=007bff&color=fff&size=512&font-size=0.4&bold=true">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background-color: #f4f7f6; margin: 0; padding: 20px; }
-        .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        h2 { color: #2c3e50; }
-        #reader { width: 100%; border-radius: 8px; overflow: hidden; }
-        button { background-color: #3498db; color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; font-size: 16px; margin-top: 10px; width: 100%; }
-        button:hover { background-color: #2980b9; }
-        #status { margin-top: 20px; font-weight: bold; padding: 10px; border-radius: 5px; }
-        .admin-box { margin-top: 25px; padding: 15px; border: 2px dashed #3498db; border-radius: 10px; background-color: #ebf5fb; display: none; }
-        select { width: 100%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #ccc; }
-        .success { background-color: #d4edda; color: #155724; }
-        .error { background-color: #f8d7da; color: #721c24; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            margin: 0; 
+            background: #1a1a1a; 
+            color: white; 
+            overflow: hidden;
+        }
+        .logo { 
+            font-size: 32px; 
+            font-weight: 900; 
+            margin-bottom: 5px; 
+            letter-spacing: 4px; 
+            color: #007bff;
+        }
+        .subtitle {
+            font-size: 14px;
+            margin-bottom: 30px;
+            opacity: 0.7;
+            text-transform: uppercase;
+        }
+        #qrcode { 
+            padding: 20px; 
+            background: white; 
+            border-radius: 20px; 
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            transition: transform 0.3s ease;
+        }
+        #qrcode:active { transform: scale(0.95); }
+        #timer-bar {
+            width: 280px;
+            height: 4px;
+            background: #333;
+            margin-top: 25px;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        #progress {
+            width: 100%;
+            height: 100%;
+            background: #007bff;
+            transition: width 1s linear;
+        }
+        .instruction {
+            margin-top: 15px;
+            font-size: 16px;
+            font-weight: 300;
+        }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>RSCO Attendance</h2>
-    <div id="reader"></div>
-    <div id="status">Ready to scan...</div>
+    <div class="logo">RSCO TERMINAL</div>
+    <div class="subtitle">Office Attendance System</div>
 
-    <div id="adminSection" class="admin-box">
-        <h3>Admin: Field Duty Entry</h3>
-        <p style="font-size: 12px; color: #555;">Select employee for manual punch:</p>
-        <select id="employeeDropdown">
-            <option>Loading employee list...</option>
-        </select>
-        <button id="adminBtn" onclick="submitAdminPunch()" style="background-color: #27ae60;">Submit Manual Punch</button>
+    <div id="qrcode"></div>
+
+    <div id="timer-bar">
+        <div id="progress"></div>
     </div>
-</div>
+    <div class="instruction">Scan to Clock In/Out</div>
 
-<script>
-    const statusDiv = document.getElementById('status');
-    const adminSection = document.getElementById('adminSection');
+    <script>
+        // --- CONFIGURATION ---
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzKKx9LVKCgEbPkIJHSxHrPnMS_jNSoQKFAbxyDHuUzx70rs7ekRQCCQshzUwjXMgxzEw/exec"; 
+        const SECRET = "RSCO_SECURE_2026";
+        const ROTATION_SECONDS = 30;
+        // ---------------------
 
-    // 1. Generate or Retrieve Device Fingerprint
-    let fingerprint = localStorage.getItem('deviceFingerprint');
-    if (!fingerprint) {
-        fingerprint = 'FP-' + Math.random().toString(36).substr(2, 9) + Date.now();
-        localStorage.setItem('deviceFingerprint', fingerprint);
-    }
+        let timeLeft = ROTATION_SECONDS;
 
-    // 2. Initialize Scanner
-    const html5QrCode = new html5Qrcode("reader");
-    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-
-    html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
-
-    function onScanSuccess(decodedText) {
-        // We ignore the QR content and use the stored Fingerprint + Current Time
-        statusDiv.innerHTML = "Processing...";
-        statusDiv.className = "";
-
-        google.script.run
-            .withSuccessHandler(handleResponse)
-            .processPunch("", fingerprint, false, ""); 
-    }
-
-    // 3. Handle Script Responses
-    function handleResponse(response) {
-        statusDiv.innerHTML = response;
-        if (response.includes("Success")) {
-            statusDiv.className = "success";
-            // If the user is an Admin, load the employee list
-            checkAdminRole();
-        } else if (response.includes("NEW_DEVICE")) {
-            registerNewUser();
-        } else {
-            statusDiv.className = "error";
+        function generateQR() {
+            const ts = Math.floor(Date.now() / 1000);
+            // Create token: SECRET|timestamp
+            const token = btoa(SECRET + "|" + ts);
+            
+            const qrContainer = document.getElementById("qrcode");
+            qrContainer.innerHTML = ""; // Clear old QR
+            
+            new QRCode(qrContainer, { 
+                text: SCRIPT_URL + "?token=" + token, 
+                width: 280, 
+                height: 280,
+                correctLevel: QRCode.CorrectLevel.M
+            });
+            
+            timeLeft = ROTATION_SECONDS;
+            updateProgress();
         }
-    }
 
-    function registerNewUser() {
-        let name = prompt("This device is not linked. Please enter your Full Name (exactly as in records):");
-        if (name) {
-            google.script.run
-                .withSuccessHandler(handleResponse)
-                .registerDevice(name, fingerprint);
-        }
-    }
-
-    // 4. Admin Logic
-    function checkAdminRole() {
-        google.script.run.withSuccessHandler(function(names) {
-            if (names && names.length > 0) {
-                adminSection.style.display = 'block';
-                let select = document.getElementById('employeeDropdown');
-                select.innerHTML = '';
-                names.forEach(name => {
-                    let opt = document.createElement('option');
-                    opt.value = name;
-                    opt.text = name;
-                    select.appendChild(opt);
-                });
+        function updateProgress() {
+            const percent = (timeLeft / ROTATION_SECONDS) * 100;
+            document.getElementById("progress").style.width = percent + "%";
+            
+            if (timeLeft <= 0) {
+                generateQR();
+            } else {
+                timeLeft--;
+                setTimeout(updateProgress, 1000);
             }
-        }).getEmployeeList(fingerprint); // Pass FP to verify admin status
-    }
+        }
 
-    function submitAdminPunch() {
-        let targetEmployee = document.getElementById('employeeDropdown').value;
-        statusDiv.innerHTML = "Admin processing for " + targetEmployee + "...";
-        
-        google.script.run
-            .withSuccessHandler(handleResponse)
-            .processPunch("", fingerprint, true, targetEmployee);
-    }
-
-    // Check for admin role on page load
-    window.onload = checkAdminRole;
-
-</script>
+        // Initial Start
+        generateQR();
+    </script>
 </body>
 </html>
